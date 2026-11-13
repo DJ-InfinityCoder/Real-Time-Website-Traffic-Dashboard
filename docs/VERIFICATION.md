@@ -44,5 +44,5 @@ The HBase counter sink is at-least-once: crash replay can double counts.
 The producer supplies simulated access logs; it does not collect a website's
 actual Nginx/Apache logs. Driver-side collection and counter RPCs limit scale.
 There is no replicated HBase/HDFS deployment or production authentication.
-This workspace has no usable Git metadata; create/push your GitHub submission
-from a normal repository checkout, excluding ignored runtime and data folders.
+The project is published at https://github.com/DJ-InfinityCoder/Real-Time-Website-Traffic-Dashboard.
+Runtime downloads, local data, logs, and the Python virtual environment are excluded from Git.
