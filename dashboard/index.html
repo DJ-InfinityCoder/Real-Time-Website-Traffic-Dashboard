@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Web Traffic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="/vendor/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1218;
+    --panel: #141b24;
+    --panel-2: #19222d;
+    --line: #243040;
+    --text: #dbe4ee;
+    --muted: #8294a8;
+    --req: #5aa9ff;
+    --ok: #43c59e;
+    --warn: #f0b94d;
+    --bad: #ff6a5b;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 var(--sans); }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 18px 22px 40px; }
+
+  header { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 16px; }
+  h1 { font: 600 22px/1.1 var(--sans); margin: 0; letter-spacing: -0.01em; }
+  .pipeline { color: var(--muted); font: 12px var(--mono); margin-top: 4px; }
+  .spacer { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 999px;
+          background: var(--panel); border: 1px solid var(--line); font: 500 12px var(--mono); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pill.live .dot { background: var(--ok); box-shadow: 0 0 0 0 rgba(67,197,158,.6); animation: pulse 2s infinite; }
+  .pill.stale .dot { background: var(--warn); }
+  .pill.down .dot { background: var(--bad); }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(67,197,158,0); } 100% { box-shadow: 0 0 0 0 rgba(67,197,158,0); } }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { background: var(--panel); color: var(--muted); border: 0; padding: 6px 13px; font: 500 12px var(--mono); cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.on { background: var(--req); color: #06111d; }
+
+  .banner { display: none; margin-bottom: 14px; padding: 11px 16px; border-radius: 8px; border: 1px solid var(--bad);
+            background: rgba(255,106,91,.12); color: #ffd3ce; font-weight: 500; }
+  .banner.show { display: block; }
+  .banner.info { border-color: var(--warn); background: rgba(240,185,77,.12); color: #ffe5b0; }
+
+  .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+  .kpi .label { color: var(--muted); font-size: 12px; }
+  .kpi .value { font: 500 28px/1.15 var(--mono); margin-top: 4px; letter-spacing: -0.02em; white-space: nowrap; }
+  .kpi .sub { color: var(--muted); font: 11px var(--mono); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kpi.alert { border-color: var(--bad); }
+  .kpi.alert .value { color: var(--bad); }
+
+  .grid { display: grid; gap: 12px; margin-bottom: 12px; }
+  .g-main { grid-template-columns: 2fr 1fr; }
+  .g-half { grid-template-columns: 1fr 1fr; }
+  .g-third { grid-template-columns: 1fr 1fr 1fr; }
+  h2 { font: 600 13px var(--sans); margin: 0 0 10px; color: var(--text); }
+  h2 small { font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .chart { position: relative; height: 250px; }
+  .chart.sm { height: 190px; }
+
+  .donut { display: grid; grid-template-columns: 150px 1fr; gap: 14px; align-items: center; height: 250px; }
+  .donut .chart { height: 150px; }
+  .legend { display: grid; gap: 9px; font: 12px var(--mono); }
+  .legend div { display: flex; align-items: center; gap: 8px; }
+  .legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .legend b { margin-left: auto; font-weight: 500; }
+
+  .bars { display: grid; gap: 7px; }
+  .bar { display: grid; grid-template-columns: minmax(80px, 1.1fr) 2fr 64px; gap: 10px; align-items: center; font: 12px var(--mono); }
+  .bar .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar .track { height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+  .bar .fill { height: 100%; background: var(--req); border-radius: 4px; transition: width .6s ease; }
+  .bar .fill.bot { background: var(--bad); }
+  .bar .num { text-align: right; color: var(--muted); }
+  .tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 4px; font: 500 10px var(--mono); background: rgba(255,106,91,.18); color: var(--bad); }
+  .empty { color: var(--muted); font: 12px var(--mono); padding: 18px 0; }
+
+  table { width: 100%; border-collapse: collapse; font: 12px var(--mono); }
+  th { text-align: left; color: var(--muted); font-weight: 400; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 5px 8px; border-bottom: 1px solid var(--panel-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+  td.st { color: var(--bad); font-weight: 600; }
+
+  footer { color: var(--muted); font: 11px var(--mono); margin-top: 8px; }
+
+  @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, 1fr); } .g-main, .g-half, .g-third { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) { .kpis { grid-template-columns: repeat(2, 1fr); } .donut { grid-template-columns: 1fr; height: auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Live Web Traffic</h1>
+      <div class="pipeline">Kafka &rarr; Spark Structured Streaming &rarr; HBase &rarr; this page</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="seg" id="windows">
+      <button data-w="60">1 min</button>
+      <button data-w="300" class="on">5 min</button>
+      <button data-w="900">15 min</button>
+    </div>
+    <div class="pill" id="status"><span class="dot"></span><span id="status-text">connecting</span></div>
+  </header>
+
+  <div class="banner" id="banner"></div>
+
+  <section class="kpis">
+    <div class="card kpi"><div class="label">Requests / sec</div><div class="value" id="k-rps">-</div><div class="sub" id="k-rps-sub">&nbsp;</div></div>
+    <div class="card kpi"><div class="label">Requests</div><div class="value" id="k-req">-</div><div class="sub" id="k-req-sub">&nbsp;</div></div>
+    <div class="card kpi"><div class="label">Unique visitors</div><div class="value" id="k-uv">-</div><div class="sub">distinct client IPs</div></div>
+    <div class="card kpi" id="k-err-card"><div class="label">Server error rate (5xx)</div><div class="value" id="k-err">-</div><div class="sub" id="k-err-sub">&nbsp;</div></div>
+    <div class="card kpi"><div class="label">Avg response time</div><div class="value" id="k-rt">-</div><div class="sub">milliseconds</div></div>
+    <div class="card kpi"><div class="label">Bandwidth</div><div class="value" id="k-bw">-</div><div class="sub" id="k-bw-sub">&nbsp;</div></div>
+  </section>
+
+  <section class="grid g-main">
+    <div class="card">
+      <h2>Traffic <small>requests per second</small></h2>
+      <div class="chart"><canvas id="c-traffic"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>HTTP status codes</h2>
+      <div class="donut">
+        <div class="chart"><canvas id="c-status"></canvas></div>
+        <div class="legend" id="legend"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid g-third">
+    <div class="card">
+      <h2>Response time <small>ms, average</small></h2>
+      <div class="chart sm"><canvas id="c-rt"></canvas></div>
+    </div>
+    <div class="card"><h2>Top pages</h2><div class="bars" id="pages"></div></div>
+    <div class="card"><h2>Traffic by country</h2><div class="bars" id="countries"></div></div>
+  </section>
+
+  <section class="grid g-half">
+    <div class="card"><h2>Busiest client IPs <small>red = possible bot</small></h2><div class="bars" id="ips"></div></div>
+    <div class="card">
+      <h2>Latest server errors <small>HTTP 5xx</small></h2>
+      <table>
+        <thead><tr><th>Time</th><th>Code</th><th>Request</th><th>Client</th><th>ms</th></tr></thead>
+        <tbody id="errors"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+(() => {
+  const REFRESH_MS = 2000;
+  const ERROR_ALERT = 0.05;       // alert when >5% of the last 30 s are 5xx
+  let windowSec = 300;
+  let requestVersion = 0;
+  let controller;
+  let pollTimer;
+
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n) => Number(n).toLocaleString("en-US");
+  const pct = (x) => (x * 100).toFixed(x < 0.1 ? 1 : 0) + "%";
+  const bytes = (n) => {
+    const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0, v = n;
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return (v >= 100 || i === 0 ? v.toFixed(0) : v.toFixed(1)) + " " + u[i];
+  };
+  const clock = (epoch) => new Date(epoch * 1000).toLocaleTimeString("en-GB");
+
+  Chart.defaults.animation = false;
+  Chart.defaults.color = "#8294a8";
+  Chart.defaults.font.family = '"IBM Plex Mono", ui-monospace, monospace';
+  Chart.defaults.font.size = 11;
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const C = { req: css("--req"), ok: css("--ok"), warn: css("--warn"), bad: css("--bad"), line: css("--line") };
+  const axes = () => ({
+    x: { grid: { display: false }, ticks: { maxTicksLimit: 7, maxRotation: 0 } },
+    y: { beginAtZero: true, grid: { color: C.line }, ticks: { maxTicksLimit: 5 } },
+  });
+
+  const traffic = new Chart($("c-traffic"), {
+    type: "line",
+    data: { labels: [], datasets: [
+      { label: "requests/s", data: [], borderColor: C.req, backgroundColor: "rgba(90,169,255,.16)", fill: true, borderWidth: 2, pointRadius: 0, tension: .25 },
+      { label: "4xx/s", data: [], borderColor: C.warn, borderWidth: 1.5, pointRadius: 0, tension: .25 },
+      { label: "5xx/s", data: [], borderColor: C.bad, borderWidth: 1.5, pointRadius: 0, tension: .25 },
+    ] },
+    options: { maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, scales: axes(), plugins: { legend: { align: "end", labels: { boxWidth: 10, boxHeight: 2 } } } },
+  });
+  const rtChart = new Chart($("c-rt"), {
+    type: "line",
+    data: { labels: [], datasets: [{ label: "avg ms", data: [], borderColor: C.ok, borderWidth: 2, pointRadius: 0, tension: .25, spanGaps: true }] },
+    options: { maintainAspectRatio: false, scales: axes(), plugins: { legend: { display: false } } },
+  });
+  const STATUS = [["s2xx", "2xx success", C.ok], ["s3xx", "3xx redirect", C.req], ["s4xx", "4xx client error", C.warn], ["s5xx", "5xx server error", C.bad]];
+  const donut = new Chart($("c-status"), {
+    type: "doughnut",
+    data: { labels: STATUS.map((s) => s[1]), datasets: [{ data: [0, 0, 0, 0], backgroundColor: STATUS.map((s) => s[2]), borderColor: "#141b24", borderWidth: 2 }] },
+    options: { maintainAspectRatio: false, cutout: "66%", plugins: { legend: { display: false } } },
+  });
+
+  function bars(el, rows, { flagBots = false } = {}) {
+    el.replaceChildren();
+    if (!rows.length) { const d = document.createElement("div"); d.className = "empty"; d.textContent = "no data in this window"; el.append(d); return; }
+    const max = Math.max(...rows.map((r) => r.hits), 1);
+    for (const r of rows) {
+      const row = document.createElement("div"); row.className = "bar";
+      const name = document.createElement("div"); name.className = "name"; name.textContent = r.value; name.title = r.value;
+      if (flagBots && r.suspicious) { const t = document.createElement("span"); t.className = "tag"; t.textContent = "bot?"; name.append(t); }
+      const track = document.createElement("div"); track.className = "track";
+      const fill = document.createElement("div"); fill.className = "fill" + (flagBots && r.suspicious ? " bot" : "");
+      fill.style.width = (r.hits / max * 100) + "%"; track.append(fill);
+      const num = document.createElement("div"); num.className = "num"; num.textContent = fmt(r.hits);
+      row.append(name, track, num); el.append(row);
+    }
+  }
+
+  function errorsTable(rows) {
+    const body = $("errors"); body.replaceChildren();
+    if (!rows.length) { const tr = document.createElement("tr"); const td = document.createElement("td"); td.colSpan = 5; td.className = "empty"; td.textContent = "no server errors recently"; tr.append(td); body.append(tr); return; }
+    for (const e of rows) {
+      const tr = document.createElement("tr");
+      const cells = [clock(e.ts / 1000), e.status, `${e.method} ${e.url}`, e.ip, e.rt_ms];
+      cells.forEach((v, i) => { const td = document.createElement("td"); td.textContent = v; if (i === 1) td.className = "st"; tr.append(td); });
+      body.append(tr);
+    }
+  }
+
+  function setStatus(kind, text) { $("status").className = "pill " + kind; $("status-text").textContent = text; }
+  function banner(text, info) { const b = $("banner"); b.textContent = text || ""; b.className = "banner" + (text ? " show" : "") + (text && info ? " info" : ""); }
+
+  function render(d) {
+    const s = d.summary, label = (d.window / 60) + " min";
+    $("k-rps").textContent = fmt(s.rps_now);
+    $("k-rps-sub").textContent = `avg ${fmt(s.rps_avg)} · peak ${fmt(s.rps_peak)}`;
+    $("k-req").textContent = fmt(s.requests);
+    $("k-req-sub").textContent = `last ${label}`;
+    $("k-uv").textContent = fmt(s.unique_visitors);
+    $("k-err").textContent = pct(s.err5_rate);
+    $("k-err-sub").textContent = `4xx: ${pct(s.err4_rate)} · last 30s: ${pct(d.recent.err5_rate)}`;
+    $("k-rt").textContent = fmt(s.avg_rt);
+    $("k-bw").textContent = bytes(s.bytes);
+    $("k-bw-sub").textContent = bytes(s.bytes_per_sec) + "/s";
+
+    const hot = d.recent.requests >= 20 && d.recent.err5_rate >= ERROR_ALERT;
+    $("k-err-card").classList.toggle("alert", hot);
+    if (hot) banner(`Error spike: ${pct(d.recent.err5_rate)} of requests in the last 30 seconds returned 5xx.`);
+    else if (d.data_age !== null && d.data_age > 15) banner(`No new data for ${d.data_age} s. Is the producer or the Spark job running?`, true);
+    else if (d.data_age === null) banner("No data in this window yet. Start the producer and the Spark job.", true);
+    else banner("");
+
+    const labels = d.series.map((p) => clock(p.t));
+    traffic.data.labels = labels;
+    traffic.data.datasets[0].data = d.series.map((p) => p.rps);
+    traffic.data.datasets[1].data = d.series.map((p) => p.e4);
+    traffic.data.datasets[2].data = d.series.map((p) => p.e5);
+    traffic.update("none");
+    rtChart.data.labels = labels;
+    rtChart.data.datasets[0].data = d.series.map((p) => p.avg_rt);
+    rtChart.update("none");
+
+    donut.data.datasets[0].data = STATUS.map((x) => d.status[x[0]]);
+    donut.update("none");
+    const total = STATUS.reduce((a, x) => a + d.status[x[0]], 0) || 1;
+    $("legend").replaceChildren(...STATUS.map(([k, name, color]) => {
+      const row = document.createElement("div");
+      const sw = document.createElement("i"); sw.style.background = color;
+      const nm = document.createElement("span"); nm.textContent = name;
+      const v = document.createElement("b"); v.textContent = `${fmt(d.status[k])} · ${pct(d.status[k] / total)}`;
+      row.append(sw, nm, v); return row;
+    }));
+
+    bars($("pages"), d.top_pages);
+    bars($("countries"), d.top_countries);
+    bars($("ips"), d.top_ips, { flagBots: true });
+    errorsTable(d.errors);
+
+    const demo = d.mode === "demo";
+    const stale = d.data_age === null || d.data_age > 15;
+    setStatus(stale ? "stale" : "live", (stale ? "waiting for data" : "live") + (demo ? " · demo data" : ""));
+    $("foot").textContent = `updated ${clock(d.now)} · refresh every ${REFRESH_MS / 1000}s · source: ${demo ? "built-in simulator (demo mode)" : "HBase"}` +
+      (s.malformed ? ` · ${fmt(s.malformed)} malformed log lines dropped` : "");
+  }
+
+  async function tick() {
+    clearTimeout(pollTimer);
+    const version = ++requestVersion;
+    if (controller) controller.abort();
+    controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const r = await fetch(`/api/snapshot?window=${windowSec}`, { cache: "no-store", signal: controller.signal });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status);
+      const data = await r.json();
+      if (version === requestVersion) render(data);
+    } catch (err) {
+      if (version !== requestVersion) return;
+      setStatus("down", "backend unreachable");
+      banner("Cannot read metrics from the API / HBase. Check that HBase and its Thrift server are running.");
+      console.error(err);
+    } finally {
+      clearTimeout(timeout);
+      if (version === requestVersion) pollTimer = setTimeout(tick, REFRESH_MS);
+    }
+  }
+
+  $("windows").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    windowSec = Number(b.dataset.w);
+    document.querySelectorAll("#windows button").forEach((x) => x.classList.toggle("on", x === b));
+    tick();
+  });
+
+  tick();
+
+})();
+</script>
+</body>
+</html>

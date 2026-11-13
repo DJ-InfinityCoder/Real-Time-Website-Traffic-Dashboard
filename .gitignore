@@ -1,0 +1,9 @@
+.venv/
+/vendor/
+data/
+logs/
+run/
+__pycache__/
+*.pyc
+conf/kafka-server.properties
+.

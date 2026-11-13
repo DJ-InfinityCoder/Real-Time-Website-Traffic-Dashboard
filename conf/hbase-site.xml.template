@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!-- HBase standalone mode: master, region server and ZooKeeper in one JVM, data on the local disk. -->
+<configuration>
+  <property><name>hbase.cluster.distributed</name><value>false</value></property>
+  <property><name>hbase.rootdir</name><value>file://__DATA__/hbase</value></property>
+  <property><name>hbase.zookeeper.property.dataDir</name><value>__DATA__/zookeeper</value></property>
+  <property><name>hbase.unsafe.stream.capability.enforce</name><value>false</value></property>
+</configuration>
